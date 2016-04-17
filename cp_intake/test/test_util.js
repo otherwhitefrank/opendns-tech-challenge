@@ -1,4 +1,6 @@
 import { expect } from 'chai';
+import { assert } from 'chai';
+import { should } from 'chai';
 import { parse_cp } from '../lib/util';
 import { streamToString } from '../lib/util';
 import { fake_cp } from '../lib/fake_cp';

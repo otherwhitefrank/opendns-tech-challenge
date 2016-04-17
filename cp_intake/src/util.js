@@ -4,18 +4,6 @@ var Url = require('url');
 
 import {fake_cp} from './fake_cp';
 
-export function streamToString (stream, callback) {
-  var str = '';
-  stream.on('data', function(chunk) {
-    str += chunk;
-  });
-  stream.on('end', function() {
-    callback(str);
-  });
-}
-
-
-
 //Check Point Parser
 export class CP_Parser extends Transform {
 
@@ -117,8 +105,8 @@ export class CP_Parser extends Transform {
   };
 }
 
-//Check Point Parser
-export class DNS_Mapper extends Transform {
+//OpenDNS Mapper
+export class ODNS_Mapper extends Transform {
   constructor(options) {
     super({
       readableObjectMode : true,
@@ -197,3 +185,15 @@ export function parse_cp(event) {
 
   return s.pipe(parser);
 }
+
+export function streamToString (stream, callback) {
+  var str = '';
+  stream.on('data', function(chunk) {
+    str += chunk;
+  });
+  stream.on('end', function() {
+    callback(str);
+  });
+}
+
+
