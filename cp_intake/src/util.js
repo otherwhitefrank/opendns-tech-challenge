@@ -1,6 +1,9 @@
+'use strict';
+
 var Transform = require('stream').Transform;
 var Readable = require('stream').Readable;
 var Url = require('url');
+var logger = require('winston'); //Acquires default logger configured in index.js
 
 import {fake_cp} from './fake_cp';
 
@@ -26,7 +29,8 @@ export class CP_Parser extends Transform {
       final_str +=  "\"" + key + "\": \"" + value + "\""
     }
     else {
-      console.log("Error Spliting Entry on Colon: " + entry);
+      //Spammy, just ignore now that we have higher level logging
+      //logger.error("Error Spliting Entry on Colon within CP_Parser: " + entry);
     }
 
     return final_str;
@@ -49,7 +53,8 @@ export class CP_Parser extends Transform {
       obj[first_entry[0]] = first_entry[1];
     }
     else {
-      console.log("Error Spliting Entry on Colon: " + entry);
+      //Spammy, just ignore now that we have higher level logging
+      //logger.error("Error Spliting Entry on Colon within CP_Parser: " + entry);
     }
 
     let final_str = "";

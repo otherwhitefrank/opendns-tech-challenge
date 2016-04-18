@@ -13,6 +13,7 @@
   ],
   "npmName": "odns-upload",
   "scripts": {
+    "start": "sleep 10 && node /api/index",
     "test": "npm run build:test && mocha --compilers js:babel-core/register",
     "build:lib": "babel src --out-dir lib --source-maps",
     "build:test": "babel test --out-dir test_lib --source-maps",
@@ -42,8 +43,8 @@
     "npm": "2.x || 3.x"
   },
   "dependencies": {
-    "amqp": "^0.2.4",
     "amqplib": "^0.4.1",
-    "request": "^2.72.0"
+    "request": "^2.72.0",
+    "winston": "^2.2.0"
   }
 }

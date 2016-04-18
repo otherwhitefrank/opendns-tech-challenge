@@ -1,4 +1,6 @@
 export util from './util';
+export logger from './log';
+export validate from './validate';
 
 "use strict";
 
@@ -6,32 +8,15 @@ import { parse_cp } from './util';
 import { CP_Parser } from './util';
 import { ODNS_Mapper } from './util';
 import { streamToString } from './util';
+import { ODNS_Validator } from './validate';
+import { validateBody } from './validate';
+var logger = require('./log');
 
 var amqp = require('amqplib/callback_api');
 var express = require('express');
-var tcomb = require('tcomb');
-var tcomb_validation = require('tcomb-validation');
 var app = express();
 
-//These are required by OpenDNS Api, anything extra will just be taken as is...
-var ODNS_Validator = tcomb.struct({
-  deviceId: tcomb.Str,
-  deviceVersion: tcomb.Str,
-  eventTime: tcomb.Str,
-  alertTime: tcomb.Str,
-  dstDomain: tcomb.Str,
-  dstUrl: tcomb.Str,
-  protocolVersion: tcomb.Str,
-  providerName: tcomb.Str
-});
-
-var validateBody = function(json, schema) {
-  var valResults = tcomb_validation.validate(json, schema);
-  return {
-    valid: valResults.isValid(),
-    errors: valResults.errors
-  };
-};
+var MAX_RETRIES = 5;
 
 var handleBadJson = function (res, validateResults) {
   //Give the user a hint where there is incorrect data.
@@ -60,45 +45,70 @@ var handleBadJson = function (res, validateResults) {
   res.status(400).send(jsonData).end();
 }
 
-app.post('/checkpoint', function (req, res) {
-  var parser = new CP_Parser();
-  var odns_mapper = new ODNS_Mapper();
+amqp.connect('amqp://rabbit:5672', {heartbeat: 5}, function(err, conn) {
+  if (err) {
+    logger.error("Unable to acquire RabbitMQ server: " + err);
+    process.exit(1);
+  }
 
-  //Pipe into transform
-  //use validateBody
+  conn.createConfirmChannel(function(err, ch) {
+    var q = 'opendns';
+    ch.assertQueue(q, {durable: true});
 
-  streamToString(req.pipe(parser).pipe(odns_mapper), function(json_str) {
-    let json = JSON.parse(json_str);
+    app.post('/checkpoint', function (req, res) {
+      var parser = new CP_Parser();
+      var odns_mapper = new ODNS_Mapper();
 
-    let validateResults = validateBody(json, ODNS_Validator);
+      streamToString(req.pipe(parser).pipe(odns_mapper), function(json_str) {
+        let json = JSON.parse(json_str);
 
-    if (validateResults.valid) {
-      //Insert into RabbitMQ
-      amqp.connect('amqp://192.168.64.7:5672', function(err, conn) {
-        if (err) {
-          console.log("Error!" + err);
-          process.exit(1);
+        let validateResults = validateBody(json, ODNS_Validator);
+
+        if (validateResults.valid) {
+          //Insert into RabbitMQ
+          tryRabbitMQPostUntilSuccess(0, json_str, q, ch, {}, function(err, ok) {
+            if (err) {
+              logger.error(" [x] Can't connect to RabbitMQ after repeated attempts, exiting...");
+              res.status(500).end();
+              process.exit(1);
+            } else {
+              logger.info(" [x] Sent: " + json_str);
+              res.status(202).end();
+            }
+          });
+        } else {
+          logger.error(" [x] Bad submissions, unable to parse: " + JSON.stringify(validateResults));
+          handleBadJson(res, validateResults); //Returns 400 with some error info
         }
-
-        conn.createChannel(function(err, ch) {
-          var q = 'opendns';
-
-          ch.assertQueue(q, {durable: false});
-          ch.sendToQueue(q, new Buffer(json_str));
-          console.log(" [x] Sent: " + json_str);
-
-
-          res.status(202).end();
-          setTimeout(function() { conn.close(); }, 500); //TODO: Fix rabbit startup/exit
-        });
       });
-    } else {
-      handleBadJson(res, validateResults); //Returns 400 with some error info
-    }
+    });
+
+  });
+
+  conn.on('error', function(err) {
+    logger.error(" [x] Error from RabbitMQ server, err: " + err);
+    process.exit(1); //Let supervisord attempt to restart
   });
 });
 
+function tryRabbitMQPostUntilSuccess(count, message, q, ch, options, callback) {
+  ch.sendToQueue(q, new Buffer(message), {},
+    function(err, ok) {
+      if (err !== null && count <= MAX_RETRIES) {
+        //RabbitMQ nack
+        logger.error(" [x] Problem sending to RabbitMQ, retrying... attempt: " + count);
+        tryRabbitMQPostUntilSuccess(count + 1, message, q, ch, options, callback);
+      } else if (err !== null && count >= MAX_RETRIES) {
+        //To many retries
+        callback(err, ok);
+      } else {
+      //RabbitMQ ack
+        callback(null, ok); //Success
+      }
+    });
+}
+
 app.listen(3000, function () {
-  console.log('Check Point integration API waiting on port 3000...');
+  logger.info('Check Point integration API waiting on port 3000...');
 });
 

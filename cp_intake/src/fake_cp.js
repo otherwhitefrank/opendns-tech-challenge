@@ -1,6 +1,7 @@
 'use strict';
 
 var faker = require('faker');
+var logger = require('winston'); //Acquires default logger configured in index.js
 
 function fake_proto() {
   let arr = [
